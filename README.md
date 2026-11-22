@@ -1,10 +1,35 @@
-# Speaker Tracker
+# myds
 
 Macのカメラで顔を追跡し、指向性スピーカーを載せた2軸サーボ（Pan・Tilt）の角度を制御するmacOSアプリ
 
 Claude Codeを使用して開発
 
-## セットアップ
+## アプリのビルドとインストール
+
+```sh
+./scripts/build.sh
+```
+
+- 成果物は `dist/myds.app`
+- ビルド専用の仮想環境 `.build-venv` を自動で作成する。アプリは仮想環境に依存しない
+- 別のPythonを使う場合は `PYTHON=python3.12 ./scripts/build.sh`
+
+インストール
+1. `dist/myds.app` を「アプリケーション」フォルダへコピーする
+2. Spotlightで「myds」と検索するか、Finderからダブルクリックで起動する
+3. 初回は「myds がカメラへのアクセスを求めています」と出るので「許可」を押す
+4. Dockに残す場合は、起動中のアイコンを右クリック >「オプション」>「Dockに追加」
+
+注意
+- 署名がアドホックのため、再ビルドしてコピーし直すたびにカメラ許可を再度求められる
+- 毎回の確認を避けたい場合は、キーチェーンアクセスでコード署名用の自己署名証明書を作り、その名前を指定してビルドする
+  - `MYDS_SIGN_IDENTITY="証明書名" ./scripts/build.sh`
+- カメラを拒否してしまった場合は「システム設定 > プライバシーとセキュリティ > カメラ」で myds をONにして再起動する
+  - 一覧にない場合は `tccutil reset Camera io.github.sendarionn.myds` を実行して再起動する
+- 初回起動時のみ、MediaPipeが使うフォントキャッシュの作成で15秒ほどかかる（`~/Library/Caches/myds` に保存）
+- 終了するとカメラとシリアル接続を解放する
+
+## 開発時の起動
 
 ```sh
 python3 -m venv .venv
@@ -14,8 +39,7 @@ python3 -m venv .venv
 
 - Python 3.11以降
 - 顔検出モデル `models/blaze_face_short_range.tflite` を同梱（MediaPipe, Apache 2.0）
-- 初回起動時にカメラの使用許可を求められる
-  - 起動したターミナル（Terminal.app、VS Codeなど）に許可が付与される
+- カメラ許可は起動したターミナル（Terminal.app、VS Codeなど）に付与される
   - 許可されていない場合は「システム設定 > プライバシーとセキュリティ > カメラ」で該当アプリを許可する
   - 許可後は3秒以内に自動で再接続される
 
@@ -71,6 +95,8 @@ python3 -m venv .venv
 | `speaker_tracker/serial_controller.py` | PySerialによる送信 |
 | `speaker_tracker/ui.py` | GUI |
 | `main.py` | 起動 |
+| `myds.spec` | PyInstallerのビルド設定 |
+| `scripts/build.sh` | アプリのビルド |
 
 カメラとスピーカーの位置差は `TrackingSettings.speaker_offset_m` で補正できる構造にしてある（顔幅から距離を推定）
 既定値は0で、補正は行わない

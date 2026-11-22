@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,7 +10,9 @@ import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "blaze_face_short_range.tflite"
+# PyInstallerでビルドしたアプリでは同梱データの展開先を基準にする
+_BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+MODEL_PATH = _BASE_DIR / "models" / "blaze_face_short_range.tflite"
 
 
 @dataclass(frozen=True)

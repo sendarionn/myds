@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import math
+import sys
 import time
 
 import serial
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QCameraPermission, QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -192,7 +194,7 @@ def _spin(lo, hi, value, step, decimals=1, suffix=""):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Speaker Tracker")
+        self.setWindowTitle("myds")
         self.ctrl = TrackingController()
         self.servo = VirtualServo()
         self.serial = SerialOutput()
@@ -201,6 +203,7 @@ class MainWindow(QMainWindow):
         self._last_tick = time.monotonic()
         self._last_send = 0.0
         self._frame_times: list[float] = []
+        self._closing = False
 
         self.video = VideoView()
         self.speaker = SpeakerView(self.ctrl, self.servo)
@@ -367,9 +370,31 @@ class MainWindow(QMainWindow):
         return w
 
     # ---------- カメラ ----------
+    def _camera_allowed(self) -> bool:
+        """アプリとして起動した場合はQt経由でカメラ許可を取得する"""
+        if not getattr(sys, "frozen", False):
+            return True  # 開発時はOpenCVが起動元のターミナルに許可を要求する
+        app = QApplication.instance()
+        perm = QCameraPermission()
+        status = app.checkPermission(perm)
+        if status == Qt.PermissionStatus.Granted:
+            return True
+        if status == Qt.PermissionStatus.Undetermined:
+            self.video.set_message("カメラの使用許可を待っています")
+            app.requestPermission(perm, self, lambda _: self.start_camera(self.camera_combo.currentIndex()))
+        else:
+            self.video.set_message(
+                "カメラの使用が許可されていません\n"
+                "システム設定 > プライバシーとセキュリティ > カメラ で myds を許可し、再起動してください"
+            )
+        return False
+
     def start_camera(self, index: int) -> None:
         if self.worker is not None:
             self.worker.stop()
+            self.worker = None
+        if self._closing or not self._camera_allowed():
+            return
         self.video.set_message("カメラ起動中")
         self.worker = CaptureWorker(index, self.ctrl.settings)
         self.worker.frame_ready.connect(self._on_frame)
@@ -395,7 +420,7 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, lambda: self._retry_camera(failed_worker))
 
     def _retry_camera(self, failed_worker) -> None:
-        if self.worker is failed_worker and not self.isHidden():
+        if self.worker is failed_worker and not self._closing:
             self.start_camera(self.camera_combo.currentIndex())
 
     # ---------- 操作 ----------
@@ -553,9 +578,15 @@ class MainWindow(QMainWindow):
             f"{len(self._frame_times)} fps{raw_txt}"
         )
 
-    def closeEvent(self, event):
+    def shutdown(self) -> None:
+        """カメラとシリアル接続を解放する。複数回呼ばれても問題ない"""
+        self._closing = True
         self.timer.stop()
         if self.worker is not None:
             self.worker.stop()
+            self.worker = None
         self.serial.disconnect()
+
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)
